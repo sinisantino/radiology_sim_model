@@ -1,0 +1,20 @@
+- update and project
+- what everyone is doing
+- eva on cluster
+
+**say that I will not be here next week
+
+
+How to improve model:
+increase "max_epochs" variable
+convert dicom files to nifti files
+must use .nii.gz files
+change USE_REAL_DATA variable to True
+place path of real data in REAL_DATA_PATH variable
+it will train in 50 epochs
+I have an updated script for number of gpu's on my pc, but the cluster is not updated
+
+Future:
+have num gpus be defined as a parameter
+have real data boolean defined as parameter
+have path to real data defined as parameter
