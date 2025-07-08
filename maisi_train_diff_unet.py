@@ -39,6 +39,17 @@ def parse_arguments():
         help="Number of training epochs. If not specified, uses 2 for simulated data and 50 for real data."
     )
     
+    parser.add_argument(
+        "--batch-size", "-b",
+        type=int,
+        default=1,
+        help="Training batch size (number of medical images processed together). "
+             "Default=1 is safe for most GPUs. Increase to 2-4 if you have: "
+             "high-end GPU (24GB+ VRAM), smaller image dimensions, or want faster training. "
+             "Keep at 1 if you have: limited GPU memory (8-16GB), very large 3D medical images, "
+             "or get GPU out-of-memory errors."
+    )
+    
     # Data configuration
     parser.add_argument(
         "--real-data",
@@ -61,6 +72,12 @@ def parse_arguments():
         help="Number of GPUs to use for training."
     )
     
+    parser.add_argument(
+        "--validate-gpu",
+        action="store_true",
+        help="Validate GPU availability before starting training."
+    )
+    
     # MAISI version
     parser.add_argument(
         "--model-version",
@@ -75,6 +92,27 @@ def parse_arguments():
 # Parse command line arguments
 args = parse_arguments()
 
+# GPU Validation (if requested)
+if args.validate_gpu:
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_count = torch.cuda.device_count()
+            print(f"✅ GPU validation: Found {gpu_count} GPU(s)")
+            if args.gpus > gpu_count:
+                print(f"⚠️  Warning: Requested {args.gpus} GPUs but only {gpu_count} available")
+                args.gpus = gpu_count
+                print(f"   Adjusting to use {args.gpus} GPUs")
+            for i in range(min(args.gpus, gpu_count)):
+                gpu_name = torch.cuda.get_device_name(i)
+                gpu_memory = torch.cuda.get_device_properties(i).total_memory / 1024**3
+                print(f"   GPU {i}: {gpu_name} ({gpu_memory:.1f} GB)")
+        else:
+            print("❌ No CUDA GPUs available. Training will be very slow on CPU.")
+            print("   Consider using a machine with GPU acceleration.")
+    except ImportError:
+        print("⚠️  PyTorch not available for GPU validation")
+
 # Display configuration
 print("="*60)
 print("MAISI TRAINING CONFIGURATION:")
@@ -88,6 +126,27 @@ if args.epochs:
 else:
     print(f"• Training epochs: Auto-determined based on data type")
 print(f"• Number of GPUs: {args.gpus}")
+print(f"• Batch size: {args.batch_size}")
+
+# Display batch size guidance
+if args.batch_size > 1:
+    print(f"  ℹ️  Using batch size {args.batch_size} - ensure you have sufficient GPU memory")
+    print(f"  💡 Monitor GPU usage with: nvidia-smi")
+else:
+    print(f"  ℹ️  Using batch size 1 (safe default for most GPUs)")
+    print(f"  💡 Consider increasing to 2-4 if you have 24GB+ GPU memory")
+
+print("\n📋 BATCH SIZE GUIDANCE:")
+print("• INCREASE batch size (to 2-4) if you have:")
+print("  - High-end GPU with 24GB+ VRAM (RTX 4090, A100, H100)")
+print("  - Smaller medical image dimensions")
+print("  - Want potentially faster training")
+print("• KEEP batch size at 1 if you have:")
+print("  - Limited GPU memory (8-16GB)")
+print("  - Very large 3D medical images (512³+ voxels)")
+print("  - Getting GPU out-of-memory (OOM) errors")
+print("• NOTE: 3D medical images are memory-intensive, batch_size=1 is often optimal")
+
 print("="*60)
 
 # ## Setup environment
@@ -218,7 +277,7 @@ else:
 # In[5]:
 
 
-work_dir = "./output_work_dir"
+work_dir = "./output_work_dir"  # Fixed output directory
 if not os.path.isdir(work_dir):
     os.makedirs(work_dir)
 
@@ -318,6 +377,11 @@ else:
     print(f"Using {max_epochs} epochs for simulated data demo")
 
 model_config_out["diffusion_unet_train"]["n_epochs"] = max_epochs
+
+# Update batch size if specified
+if hasattr(args, 'batch_size') and args.batch_size != 1:
+    model_config_out["diffusion_unet_train"]["batch_size"] = args.batch_size
+    print(f"Updated batch size to: {args.batch_size}")
 
 model_config_filepath = os.path.join(work_dir, "config_maisi_diff_model.json")
 with open(model_config_filepath, "w") as f:
@@ -693,4 +757,59 @@ print(f"   • Image dimensions: {sim_dim} (smaller than typical clinical images
 
 print("\nREMEMBER: This is a DEMONSTRATION script. For better results, you need real data and extensive training.")
 print("="*60)
+
+def display_gpu_validation_guidance():
+    """Display guidance on when to use GPU validation."""
+    print("\n" + "="*60)
+    print("📋 WHEN TO USE GPU VALIDATION (--validate-gpu)")
+    print("="*60)
+    
+    print("\n✅ ALWAYS USE GPU VALIDATION WHEN:")
+    print("   • You're new to deep learning or MAISI training")
+    print("   • Running on a new machine or cluster for the first time")
+    print("   • Using multiple GPUs (--gpus > 1)")
+    print("   • Working with large medical images (512³+ voxels)")
+    print("   • Training fails with mysterious GPU/CUDA errors")
+    print("   • You want to optimize batch size for your hardware")
+    print("   • Running in cloud environments (AWS, GCP, Azure)")
+    print("   • Sharing scripts with colleagues who have different GPUs")
+    
+    print("\n🔧 ESPECIALLY USEFUL FOR:")
+    print("   • Debugging GPU memory issues before long training runs")
+    print("   • Automatically adjusting settings based on available hardware")
+    print("   • Preventing waste of time on incompatible configurations")
+    print("   • Learning about your system's GPU capabilities")
+    print("   • Production deployments where reliability is critical")
+    
+    print("\n⚠️  OPTIONAL (BUT STILL HELPFUL) WHEN:")
+    print("   • You're experienced and know your hardware well")
+    print("   • Running the same setup repeatedly")
+    print("   • Using well-tested configurations")
+    print("   • Working on personal machines with known specifications")
+    
+    print("\n💡 WHAT GPU VALIDATION DOES:")
+    print("   • Checks if CUDA/PyTorch can see your GPUs")
+    print("   • Reports GPU names and memory capacity")
+    print("   • Auto-adjusts --gpus if you request more than available")
+    print("   • Warns about potential memory limitations")
+    print("   • Provides early error detection before training starts")
+    
+    print("\n🎯 PRACTICAL BENEFITS:")
+    print("   • Saves time: catch issues before hours of training")
+    print("   • Saves frustration: clear error messages upfront")
+    print("   • Saves money: avoid wasted cloud compute time")
+    print("   • Improves reliability: prevents mid-training crashes")
+    print("   • Educational: learn about your hardware capabilities")
+    
+    print("\n🚀 EXAMPLE SCENARIOS:")
+    print("   • 'I have a new RTX 4090, will it work for medical imaging?'")
+    print("   • 'Our cluster has mixed GPUs, which ones should I use?'")
+    print("   • 'Training keeps crashing, is it a GPU memory issue?'")
+    print("   • 'What batch size can I use with my 16GB GPU?'")
+    print("   • 'I'm running on multiple A100s, are they all detected?'")
+    
+    print("\n📝 RECOMMENDATION:")
+    print("   Use --validate-gpu by default unless you have a specific reason not to.")
+    print("   It's fast, informative, and can prevent costly mistakes.")
+    print("="*60)
 
