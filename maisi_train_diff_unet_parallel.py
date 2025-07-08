@@ -63,7 +63,7 @@ def parse_arguments():
     parser.add_argument(
         "--num-gpus", "-g",
         type=int,
-        default=4,
+        default=2,  # Changed from 4 to 2 for your hardware
         help="Number of GPUs to use for parallel training/inference. Each GPU will generate one image."
     )
     
@@ -91,7 +91,7 @@ def parse_arguments():
     parser.add_argument(
         "--master-port",
         type=str,
-        default="12355",
+        default="29500",  # Changed from 12355 to avoid conflicts
         help="Port of the master node for distributed training."
     )
     
@@ -326,7 +326,7 @@ logger.info(f"files and folders under work_dir: {os.listdir(work_dir)}.")
 
 # ## Parallel Training Functions
 
-def run_parallel_torchrun(module, module_args, num_gpus, num_nodes=1, node_rank=0, master_addr="localhost", master_port="12355"):
+def run_parallel_torchrun(module, module_args, num_gpus, num_nodes=1, node_rank=0, master_addr="localhost", master_port="29500"):
     """
     Run torchrun for parallel/distributed training across multiple GPUs and nodes.
     
