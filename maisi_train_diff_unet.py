@@ -75,7 +75,9 @@ def parse_arguments():
     parser.add_argument(
         "--validate-gpu",
         action="store_true",
-        help="Validate GPU availability before starting training."
+        help="Validate GPU availability before starting training. "
+             "Recommended for: new machines, multiple GPUs, cloud environments, "
+             "debugging GPU issues, or when unsure about hardware compatibility."
     )
     
     # MAISI version
@@ -135,6 +137,10 @@ if args.batch_size > 1:
 else:
     print(f"  ℹ️  Using batch size 1 (safe default for most GPUs)")
     print(f"  💡 Consider increasing to 2-4 if you have 24GB+ GPU memory")
+
+# Add tip about GPU validation
+if not args.validate_gpu:
+    print(f"\n💡 TIP: Add --validate-gpu to check GPU compatibility and avoid training issues")
 
 print("\n📋 BATCH SIZE GUIDANCE:")
 print("• INCREASE batch size (to 2-4) if you have:")
@@ -757,59 +763,4 @@ print(f"   • Image dimensions: {sim_dim} (smaller than typical clinical images
 
 print("\nREMEMBER: This is a DEMONSTRATION script. For better results, you need real data and extensive training.")
 print("="*60)
-
-def display_gpu_validation_guidance():
-    """Display guidance on when to use GPU validation."""
-    print("\n" + "="*60)
-    print("📋 WHEN TO USE GPU VALIDATION (--validate-gpu)")
-    print("="*60)
-    
-    print("\n✅ ALWAYS USE GPU VALIDATION WHEN:")
-    print("   • You're new to deep learning or MAISI training")
-    print("   • Running on a new machine or cluster for the first time")
-    print("   • Using multiple GPUs (--gpus > 1)")
-    print("   • Working with large medical images (512³+ voxels)")
-    print("   • Training fails with mysterious GPU/CUDA errors")
-    print("   • You want to optimize batch size for your hardware")
-    print("   • Running in cloud environments (AWS, GCP, Azure)")
-    print("   • Sharing scripts with colleagues who have different GPUs")
-    
-    print("\n🔧 ESPECIALLY USEFUL FOR:")
-    print("   • Debugging GPU memory issues before long training runs")
-    print("   • Automatically adjusting settings based on available hardware")
-    print("   • Preventing waste of time on incompatible configurations")
-    print("   • Learning about your system's GPU capabilities")
-    print("   • Production deployments where reliability is critical")
-    
-    print("\n⚠️  OPTIONAL (BUT STILL HELPFUL) WHEN:")
-    print("   • You're experienced and know your hardware well")
-    print("   • Running the same setup repeatedly")
-    print("   • Using well-tested configurations")
-    print("   • Working on personal machines with known specifications")
-    
-    print("\n💡 WHAT GPU VALIDATION DOES:")
-    print("   • Checks if CUDA/PyTorch can see your GPUs")
-    print("   • Reports GPU names and memory capacity")
-    print("   • Auto-adjusts --gpus if you request more than available")
-    print("   • Warns about potential memory limitations")
-    print("   • Provides early error detection before training starts")
-    
-    print("\n🎯 PRACTICAL BENEFITS:")
-    print("   • Saves time: catch issues before hours of training")
-    print("   • Saves frustration: clear error messages upfront")
-    print("   • Saves money: avoid wasted cloud compute time")
-    print("   • Improves reliability: prevents mid-training crashes")
-    print("   • Educational: learn about your hardware capabilities")
-    
-    print("\n🚀 EXAMPLE SCENARIOS:")
-    print("   • 'I have a new RTX 4090, will it work for medical imaging?'")
-    print("   • 'Our cluster has mixed GPUs, which ones should I use?'")
-    print("   • 'Training keeps crashing, is it a GPU memory issue?'")
-    print("   • 'What batch size can I use with my 16GB GPU?'")
-    print("   • 'I'm running on multiple A100s, are they all detected?'")
-    
-    print("\n📝 RECOMMENDATION:")
-    print("   Use --validate-gpu by default unless you have a specific reason not to.")
-    print("   It's fast, informative, and can prevent costly mistakes.")
-    print("="*60)
 
