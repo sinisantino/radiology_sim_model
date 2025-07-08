@@ -20,6 +20,85 @@
 # 
 # `[Release Note (March 2025)]:` We are excited to announce the new MAISI Version `'maisi3d-rflow'`. Compared with the previous version `'maisi3d-ddpm'`, it accelerated latent diffusion model inference by 33x. Please see the detailed difference in the following section.
 
+# ## Command Line Arguments
+
+import argparse
+
+def parse_arguments():
+    """Parse command line arguments for the training script."""
+    parser = argparse.ArgumentParser(
+        description="Train a 3D Diffusion Model for Generating Medical Images",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    
+    # Training configuration
+    parser.add_argument(
+        "--epochs", "-e",
+        type=int,
+        default=None,
+        help="Number of training epochs. If not specified, uses 2 for simulated data and 50 for real data."
+    )
+    
+    # Data configuration
+    parser.add_argument(
+        "--real-data",
+        action="store_true",
+        help="Use real medical imaging data instead of simulated data."
+    )
+    
+    parser.add_argument(
+        "--data-path", "-d",
+        type=str,
+        default="/path/to/your/medical/imaging/data",
+        help="Path to directory containing real medical imaging data (.nii.gz files)."
+    )
+    
+    # GPU configuration
+    parser.add_argument(
+        "--gpus", "-g",
+        type=int,
+        default=1,
+        help="Number of GPUs to use for training."
+    )
+    
+    # Output configuration
+    parser.add_argument(
+        "--output-dir", "-o",
+        type=str,
+        default="./output_work_dir",
+        help="Directory to save outputs and results."
+    )
+    
+    # MAISI version
+    parser.add_argument(
+        "--model-version",
+        type=str,
+        default="maisi3d-rflow",
+        choices=["maisi3d-rflow", "maisi3d-ddpm"],
+        help="MAISI model version to use."
+    )
+    
+    return parser.parse_args()
+
+# Parse command line arguments
+args = parse_arguments()
+
+# Display configuration
+print("="*60)
+print("MAISI TRAINING CONFIGURATION:")
+print("="*60)
+print(f"• Model version: {args.model_version}")
+print(f"• Using real data: {args.real_data}")
+if args.real_data:
+    print(f"• Data path: {args.data_path}")
+if args.epochs:
+    print(f"• Training epochs: {args.epochs} (from command line)")
+else:
+    print(f"• Training epochs: Auto-determined based on data type")
+print(f"• Number of GPUs: {args.gpus}")
+print(f"• Output directory: {args.output_dir}")
+print("="*60)
+
 # ## Setup environment
 
 # In[1]:
@@ -69,7 +148,7 @@ logger = setup_logging("notebook")
 # In[3]:
 
 
-maisi_version = "maisi3d-rflow"
+maisi_version = args.model_version  # Use command line argument
 if maisi_version == "maisi3d-ddpm":
     model_def_path = "./configs/config_maisi3d-ddpm.json"
 elif maisi_version == "maisi3d-rflow":
@@ -85,32 +164,23 @@ logger.info(f"MAISI version is {maisi_version}, whether to use body_region is {i
 # ### Dataset Configuration
 # 
 # Choose between simulated data (for demo) or real medical imaging data (for production)
-# 
-# OPTION 1: Use simulated data (current demo setup)
-# OPTION 2: Use real medical imaging data (recommended for actual training)
+# Now controlled by command line arguments: --real-data and --data-path
 
 # In[4]:
 
 # =============================================================================
-# CONFIGURATION: Choose your data source
+# CONFIGURATION: Use command line arguments
 # =============================================================================
 
-USE_REAL_DATA = False  # Set to True to use real medical imaging data
+USE_REAL_DATA = args.real_data  # Set by --real-data flag
 
 if USE_REAL_DATA:
     # =============================================================================
     # OPTION 2: REAL MEDICAL IMAGING DATA (Recommended for production)
     # =============================================================================
     
-    # Path to your real medical imaging data directory
-    # Your data should be organized like this:
-    # /path/to/your/data/
-    # ├── patient001.nii.gz
-    # ├── patient002.nii.gz
-    # ├── patient003.nii.gz
-    # └── ...
-    
-    REAL_DATA_PATH = "/path/to/your/medical/imaging/data"  # CHANGE THIS PATH
+    # Path from command line argument
+    REAL_DATA_PATH = args.data_path
     
     # Create datalist from real data
     import glob
@@ -144,7 +214,7 @@ else:
     # =============================================================================
     
     print("WARNING: Using simulated data. Results will look like noise/static!")
-    print("For real medical images, set USE_REAL_DATA = True and configure REAL_DATA_PATH")
+    print("For real medical images, use: --real-data --data-path /your/data/path")
     
     sim_datalist = {"training": [{"image": "tr_image_001.nii.gz"}, {"image": "tr_image_002.nii.gz"}]}
     sim_dim = (224, 224, 96)
@@ -242,7 +312,11 @@ with open(env_config_filepath, "w") as f:
     json.dump(env_config_out, f, sort_keys=True, indent=4)
 
 # Update model configuration for training
-if USE_REAL_DATA:
+if args.epochs:
+    # Use user-specified epochs from command line
+    max_epochs = args.epochs
+    print(f"Using {max_epochs} epochs (from command line)")
+elif USE_REAL_DATA:
     # Use more realistic training settings for real data
     max_epochs = 50  # Increased for real data (still conservative)
     print(f"Using {max_epochs} epochs for real data training")
