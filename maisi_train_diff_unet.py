@@ -101,19 +101,87 @@ if args.validate_gpu:
         if torch.cuda.is_available():
             gpu_count = torch.cuda.device_count()
             print(f"✅ GPU validation: Found {gpu_count} GPU(s)")
+            
+            # Check if requested GPUs exceed available
             if args.gpus > gpu_count:
                 print(f"⚠️  Warning: Requested {args.gpus} GPUs but only {gpu_count} available")
                 args.gpus = gpu_count
                 print(f"   Adjusting to use {args.gpus} GPUs")
+            
+            # Validate each GPU and check for potential issues
+            insufficient_memory_gpus = []
+            low_memory_gpus = []
+            
             for i in range(min(args.gpus, gpu_count)):
-                gpu_name = torch.cuda.get_device_name(i)
-                gpu_memory = torch.cuda.get_device_properties(i).total_memory / 1024**3
-                print(f"   GPU {i}: {gpu_name} ({gpu_memory:.1f} GB)")
+                try:
+                    gpu_name = torch.cuda.get_device_name(i)
+                    gpu_props = torch.cuda.get_device_properties(i)
+                    gpu_memory = gpu_props.total_memory / 1024**3
+                    
+                    print(f"   GPU {i}: {gpu_name} ({gpu_memory:.1f} GB)")
+                    
+                    # Check for insufficient memory (less than 6 GB)
+                    if gpu_memory < 6.0:
+                        insufficient_memory_gpus.append((i, gpu_name, gpu_memory))
+                    # Check for low memory warning (6-12 GB)
+                    elif gpu_memory < 12.0:
+                        low_memory_gpus.append((i, gpu_name, gpu_memory))
+                    
+                    # Check GPU memory usage
+                    torch.cuda.set_device(i)
+                    memory_allocated = torch.cuda.memory_allocated(i) / 1024**3
+                    memory_reserved = torch.cuda.memory_reserved(i) / 1024**3
+                    
+                    if memory_allocated > 0.1:  # More than 100MB already in use
+                        print(f"   ⚠️  GPU {i} has {memory_allocated:.1f} GB already allocated")
+                        print(f"      Consider freeing GPU memory or restarting Python")
+                        
+                except Exception as e:
+                    print(f"   ❌ Error accessing GPU {i}: {str(e)}")
+            
+            # Report memory issues
+            if insufficient_memory_gpus:
+                print(f"\n❌ INSUFFICIENT GPU MEMORY:")
+                for gpu_id, name, memory in insufficient_memory_gpus:
+                    print(f"   • GPU {gpu_id} ({name}): {memory:.1f} GB - TOO LOW for 3D medical imaging")
+                print(f"   RECOMMENDATION: Use GPUs with 8GB+ memory for this workload")
+                print(f"   Your training may fail with out-of-memory errors")
+            
+            if low_memory_gpus:
+                print(f"\n⚠️  LOW GPU MEMORY WARNING:")
+                for gpu_id, name, memory in low_memory_gpus:
+                    print(f"   • GPU {gpu_id} ({name}): {memory:.1f} GB - Limited for large 3D images")
+                print(f"   RECOMMENDATION: Keep batch_size=1 and monitor memory usage")
+            
+            # Check CUDA version compatibility
+            cuda_version = torch.version.cuda
+            if cuda_version:
+                print(f"   CUDA version: {cuda_version}")
+                # Basic version check - warn if very old
+                major_version = int(cuda_version.split('.')[0])
+                if major_version < 11:
+                    print(f"   ⚠️  Old CUDA version detected. Consider upgrading to CUDA 11.0+")
+            
         else:
             print("❌ No CUDA GPUs available. Training will be very slow on CPU.")
-            print("   Consider using a machine with GPU acceleration.")
-    except ImportError:
+            print("   POSSIBLE CAUSES:")
+            print("   • No NVIDIA GPU installed")
+            print("   • CUDA drivers not installed or outdated")
+            print("   • PyTorch CPU-only version installed")
+            print("   • GPU not detected by system")
+            print("   SOLUTIONS:")
+            print("   • Install NVIDIA drivers: sudo apt install nvidia-driver-xxx")
+            print("   • Install CUDA toolkit")
+            print("   • Reinstall PyTorch with CUDA support")
+            print("   • Check GPU with: nvidia-smi")
+            
+    except ImportError as e:
         print("⚠️  PyTorch not available for GPU validation")
+        print(f"   Error: {str(e)}")
+        print("   SOLUTION: Install PyTorch with: pip install torch torchvision")
+    except Exception as e:
+        print(f"❌ Unexpected error during GPU validation: {str(e)}")
+        print("   This may indicate a serious GPU or driver issue")
 
 # Display configuration
 print("="*60)
