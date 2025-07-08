@@ -462,7 +462,7 @@ with open(model_config_filepath, "w") as f:
     json.dump(model_config_out, f, sort_keys=True, indent=4)
 
 # Adjust based on the number of GPUs you want to use
-num_gpus = 1
+num_gpus = args.gpus  # Use command line argument instead of hardcoded 1
 logger.info(f"number of GPUs: {num_gpus}.")
 
 # =============================================================================
