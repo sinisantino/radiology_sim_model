@@ -61,14 +61,6 @@ def parse_arguments():
         help="Number of GPUs to use for training."
     )
     
-    # Output configuration
-    parser.add_argument(
-        "--output-dir", "-o",
-        type=str,
-        default="./output_work_dir",
-        help="Directory to save outputs and results."
-    )
-    
     # MAISI version
     parser.add_argument(
         "--model-version",
@@ -96,7 +88,6 @@ if args.epochs:
 else:
     print(f"• Training epochs: Auto-determined based on data type")
 print(f"• Number of GPUs: {args.gpus}")
-print(f"• Output directory: {args.output_dir}")
 print("="*60)
 
 # ## Setup environment
