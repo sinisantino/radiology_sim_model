@@ -254,6 +254,10 @@ else:
 
 model_config_out["diffusion_unet_train"]["n_epochs"] = max_epochs
 
+model_config_filepath = os.path.join(work_dir, "config_maisi_diff_model.json")
+with open(model_config_filepath, "w") as f:
+    json.dump(model_config_out, f, sort_keys=True, indent=4)
+
 # Adjust based on the number of GPUs you want to use
 num_gpus = 1
 logger.info(f"number of GPUs: {num_gpus}.")
