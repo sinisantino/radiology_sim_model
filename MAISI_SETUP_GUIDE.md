@@ -27,6 +27,7 @@ python setup_maisi.py \
     --maisi_version maisi3d-rflow \
     --num_gpus 4 \
     --epochs 100 \
+    --num_images 1 \
     --work_dir ./my_maisi_project \
     --body_region chest_abdomen
 ```
@@ -48,6 +49,13 @@ python setup_maisi.py \
 - `--num_gpus`: Number of GPUs to use (default: 1)
 - `--epochs`: Number of training epochs (default: 50, recommend 100+ for production)
 - `--work_dir`: Working directory for outputs (default: ./maisi_work_dir)
+
+### Inference Parameters
+
+- `--num_images`: Number of synthetic images to generate during inference (default: 1)
+  - **Start with 1**: Medical images are complex and memory-intensive
+  - **Scale carefully**: Each image can take significant GPU memory and time
+  - **Typical usage**: Generate 1-5 images per run for evaluation
 
 ### Body Region Control (maisi3d-ddpm only)
 

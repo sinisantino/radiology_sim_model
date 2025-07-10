@@ -144,6 +144,14 @@ def parse_args():
         help="Target body region for image generation (maisi3d-ddpm only). Options: head_neck, chest, abdomen, lower_body, chest_abdomen"
     )
     
+    # Inference parameters
+    parser.add_argument(
+        "--num_images",
+        type=int,
+        default=1,
+        help="Number of synthetic images to generate during inference (default: 1). Medical images are complex - start with 1 and increase carefully."
+    )
+    
     return parser.parse_args()
 
 
@@ -350,7 +358,12 @@ def main():
     epochs = args.epochs
     model_config_out["diffusion_unet_train"]["n_epochs"] = epochs
     
+    # Configure inference parameters
+    if "diffusion_unet_infer" in model_config_out:
+        model_config_out["diffusion_unet_infer"]["num_images"] = args.num_images
+    
     logger.info(f"Using {epochs} epochs for training")
+    logger.info(f"Will generate {args.num_images} images during inference")
     if epochs < 100:
         logger.info("Note: For production, consider 100+ epochs for real data")
 
@@ -448,7 +461,7 @@ def main():
     print(f"    --model_def {model_def_filepath} \\")
     print(f"    --num_gpus {num_gpus}{no_amp_arg}")
     
-    print(f"\n# Step 3: Run inference")
+    print(f"\n# Step 3: Run inference (generate {args.num_images} images)")
     print(f"torchrun --nproc_per_node={num_gpus} --nnodes=1 \\")
     print(f"    -m scripts.diff_model_infer \\")
     print(f"    --env_config {env_config_filepath} \\")
