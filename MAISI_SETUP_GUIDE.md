@@ -102,9 +102,21 @@ torchrun --nproc_per_node=4 --nnodes=1 \
 ```
 
 #### Step 2: Create JSON Metadata (After Step 1 completes)
+
+**For maisi3d-rflow (default - no body region needed):**
 ```bash
 python setup_maisi.py --data_path /path/to/medical/images --work_dir ./maisi_work_dir --create_json_only
 ```
+
+**For maisi3d-ddpm (body region required):**
+```bash
+python setup_maisi.py --data_path /path/to/medical/images --work_dir ./maisi_work_dir --create_json_only --body_region chest_abdomen
+```
+
+**Important Notes:**
+- **maisi3d-rflow**: Body region specification is NOT required
+- **maisi3d-ddpm**: Body region specification IS required (`--body_region` flag)
+- Use the same `--body_region` value you used in the initial setup (if using maisi3d-ddpm)
 
 #### Step 3: Train the Model
 ```bash

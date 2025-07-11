@@ -236,7 +236,7 @@ def main():
         logger.info("Creating JSON metadata files only...")
         
         # Check if embedding directory exists
-        embedding_dir = os.path.join(args.work_dir, "embedding")
+        embedding_dir = os.path.join(args.work_dir, "embeddings")
         if not os.path.exists(embedding_dir):
             raise ValueError(f"Embedding directory not found: {embedding_dir}. Run data creation step first.")
         
@@ -451,7 +451,7 @@ def main():
     print(f"    --num_gpus {num_gpus}{no_amp_arg}")
     
     print(f"\n# After step 1 completes, create metadata files:")
-    print(f"echo 'Creating JSON metadata files...'")
+    print(f"python {sys.argv[0]} --data_path {data_path} --work_dir {work_dir} --create_json_only --body_region {args.body_region}")
     
     print(f"\n# Step 2: Train the model")
     print(f"torchrun --nproc_per_node={num_gpus} --nnodes=1 \\")
