@@ -37,43 +37,52 @@ python setup_maisi.py --data_path /path/to/your/medical/images --work_dir ./my_m
 ### 2. Complete Workflow Example
 
 ```bash
+# Step 0: Data preprocessing (REQUIRED)
+python preprocess_data.py \
+    --input_dir /path/to/original/medical/images \
+    --output_dir /path/to/preprocessed/images \
+    --target_spacing 3.0 0.5 0.5 \
+    --target_shape 24 512 512
+
 # Step 1: Data preparation
 python setup_maisi.py \
-    --data_path /path/to/medical/images \
+    --data_path /path/to/preprocessed/images \
     --work_dir ./maisi_work \
     --maisi_version maisi3d-rflow \
     --epochs 100 \
-    --num_gpus 2
+    --num_gpus 1
 
 # Step 2: Create training data (run the printed torchrun command)
-torchrun --nproc_per_node=2 --nnodes=1 \
+torchrun --nproc_per_node=1 --nnodes=1 \
     -m scripts.diff_model_create_training_data \
     --env_config ./maisi_work/environment_maisi_diff_model.json \
     --model_config ./maisi_work/config_maisi_diff_model.json \
     --model_def ./maisi_work/config_maisi.json \
-    --num_gpus 2
+    --num_gpus 1
 
 # Step 3: Create JSON metadata
 python setup_maisi.py \
-    --data_path /path/to/medical/images \
+    --data_path /path/to/preprocessed/images \
     --work_dir ./maisi_work \
     --create_json_only
 
-# Step 4: Train the model
-torchrun --nproc_per_node=2 --nnodes=1 \
+# Step 4: Train the model (NOTE: Use single GPU to avoid distributed training issues)
+torchrun --nproc_per_node=1 --nnodes=1 \
     -m scripts.diff_model_train \
     --env_config ./maisi_work/environment_maisi_diff_model.json \
     --model_config ./maisi_work/config_maisi_diff_model.json \
     --model_def ./maisi_work/config_maisi.json \
-    --num_gpus 2
+    --num_gpus 1 \
+    2>&1 | tee ./maisi_work/training.log
 
 # Step 5: Generate synthetic images
-torchrun --nproc_per_node=2 --nnodes=1 \
+torchrun --nproc_per_node=1 --nnodes=1 \
     -m scripts.diff_model_infer \
     --env_config ./maisi_work/environment_maisi_diff_model.json \
     --model_config ./maisi_work/config_maisi_diff_model.json \
     --model_def ./maisi_work/config_maisi.json \
-    --num_gpus 2
+    --num_gpus 1 \
+    2>&1 | tee ./maisi_work/inference.log
 ```
 
 ## MAISI Versions
@@ -122,6 +131,57 @@ python setup_maisi.py \
 
 ## Workflow Steps
 
+### Step 0: Data Preprocessing (CRITICAL for Success)
+
+**⚠️ MANDATORY STEP**: Medical images must have consistent spacing and dimensions for successful training.
+
+**Purpose**: Standardize medical imaging data to ensure consistent properties across all images.
+
+**Key Actions**:
+- Check data consistency (dimensions, voxel spacing)
+- Resample images to consistent voxel spacing
+- Resize/crop/pad to consistent dimensions
+- Normalize intensity ranges
+
+**When Required**:
+- Different image dimensions (e.g., 512x512 vs 320x320)
+- Varying voxel spacing (e.g., 0.35mm vs 0.625mm spacing)
+- Different slice counts between images
+
+**Check Data Consistency**:
+```bash
+python -c "
+import nibabel as nib
+import glob
+files = glob.glob('./your_data/*.nii.gz')
+for f in files[:5]:
+    img = nib.load(f)
+    print(f'{f}: shape={img.shape}, spacing={img.header.get_zooms()[:3]}')
+"
+```
+
+**Run Preprocessing**:
+```bash
+python preprocess_data.py \
+    --input_dir ./your_original_data \
+    --output_dir ./preprocessed_data \
+    --target_spacing 3.0 0.5 0.5 \
+    --target_shape 24 512 512
+```
+
+**Verify Results**:
+```bash
+# All images should now have identical properties
+python -c "
+import nibabel as nib
+import glob
+files = glob.glob('./preprocessed_data/*.nii.gz')
+for f in files[:3]:
+    img = nib.load(f)
+    print(f'{f}: shape={img.shape}, spacing={img.header.get_zooms()[:3]}')
+"
+```
+
 ### Step 1: Data Preparation (`setup_maisi.py`)
 
 **Purpose**: Prepare your medical imaging data and create configuration files.
@@ -134,8 +194,10 @@ python setup_maisi.py \
 - Set up directory structure
 
 **Required Parameters**:
-- `--data_path`: Path to your `.nii.gz` medical images
+- `--data_path`: Path to your **preprocessed** `.nii.gz` medical images
 - `--work_dir`: Working directory for the project
+
+**Important**: Always use preprocessed data for `--data_path` to ensure training success.
 
 ### Step 2: Create Training Data (`diff_model_create_training_data`)
 
@@ -167,6 +229,11 @@ python setup_maisi.py \
 - Save model checkpoints
 
 **Duration**: Longest step - depends on epochs and data size
+
+**⚠️ Training Performance Note**: 
+- **Expected loss progression**: Should drop from ~1.0 to ~0.1 over 50 epochs
+- **If loss stays high** (>0.5 after 25 epochs): Usually indicates inconsistent input data
+- **Solution**: Verify data was properly preprocessed in Step 0
 
 ### Step 5: Generate Synthetic Images (`diff_model_infer`)
 
@@ -266,7 +333,42 @@ python setup_maisi.py \
 
 ### Common Issues
 
-**1. Out of Memory Errors**
+**1. Poor Training Performance (Most Common)**
+```bash
+# Symptoms: Loss remains high (>0.5) after 25+ epochs
+# Root cause: Inconsistent input data
+
+# Check data consistency:
+python -c "
+import nibabel as nib
+import glob
+files = glob.glob('./your_data/*.nii.gz')
+shapes = set()
+spacings = set()
+for f in files:
+    img = nib.load(f)
+    shapes.add(img.shape)
+    spacings.add(tuple(round(x, 3) for x in img.header.get_zooms()[:3]))
+print(f'Unique shapes: {shapes}')
+print(f'Unique spacings: {spacings}')
+if len(shapes) > 1 or len(spacings) > 1:
+    print('❌ INCONSISTENT DATA - Preprocessing required!')
+else:
+    print('✅ Data is consistent')
+"
+
+# Solution: Preprocess data before training
+python preprocess_data.py --input_dir ./original --output_dir ./preprocessed
+```
+
+**2. Distributed Training Errors**
+```bash
+# Error: AttributeError: 'DistributedDataParallel' object has no attribute...
+# Solution: Use single GPU for training (known MAISI bug)
+--nproc_per_node=1 --num_gpus 1
+```
+
+**3. Out of Memory Errors**
 ```bash
 # Solutions:
 --num_splits 4    # Increase splits
@@ -274,20 +376,20 @@ python setup_maisi.py \
 # Use fewer GPUs or smaller batch sizes
 ```
 
-**2. No Medical Images Found**
+**4. No Medical Images Found**
 ```bash
 # Check:
 ls /path/to/data/*.nii.gz
 # Ensure files have .nii.gz extension
 ```
 
-**3. JSON Creation Fails**
+**5. JSON Creation Fails**
 ```bash
 # Run after training data creation:
 python setup_maisi.py --create_json_only --data_path /path --work_dir /work
 ```
 
-**4. Body Region Errors (DDPM)**
+**6. Body Region Errors (DDPM)**
 ```bash
 # Valid regions only:
 --body_region chest  # Valid
@@ -296,11 +398,13 @@ python setup_maisi.py --create_json_only --data_path /path --work_dir /work
 
 ### Performance Tips
 
-1. **Use SSD storage** for faster data loading
-2. **Monitor GPU utilization** with `nvidia-smi`
-3. **Start with fewer epochs** for testing
-4. **Use multiple GPUs** for faster training
-5. **Choose maisi3d-rflow** for faster inference
+1. **ALWAYS preprocess data first** - most critical for success
+2. **Use SSD storage** for faster data loading
+3. **Start with single GPU** to avoid distributed training issues
+4. **Monitor GPU utilization** with `nvidia-smi`
+5. **Start with fewer epochs** for testing (50 epochs minimum)
+6. **Use maisi3d-rflow** for faster inference
+7. **Check training logs** regularly for loss progression
 
 ## File Structure
 
@@ -332,8 +436,16 @@ maisi_work_dir/
 
 ### Neurological Imaging
 ```bash
+# Preprocess brain data
+python preprocess_data.py \
+    --input_dir /data/brain_scans \
+    --output_dir /data/brain_preprocessed \
+    --target_spacing 1.0 1.0 1.0 \
+    --target_shape 128 256 256
+
+# Setup MAISI
 python setup_maisi.py \
-    --data_path /data/brain_scans \
+    --data_path /data/brain_preprocessed \
     --maisi_version maisi3d-ddpm \
     --body_region head_neck \
     --epochs 150
@@ -341,29 +453,50 @@ python setup_maisi.py \
 
 ### Chest Imaging
 ```bash
+# Preprocess chest data
+python preprocess_data.py \
+    --input_dir /data/chest_ct \
+    --output_dir /data/chest_preprocessed \
+    --target_spacing 2.0 0.7 0.7 \
+    --target_shape 32 512 512
+
+# Setup MAISI
 python setup_maisi.py \
-    --data_path /data/chest_ct \
+    --data_path /data/chest_preprocessed \
     --maisi_version maisi3d-rflow \
     --epochs 100
 ```
 
 ### Multi-Region Body Imaging
 ```bash
+# Preprocess body data
+python preprocess_data.py \
+    --input_dir /data/body_scans \
+    --output_dir /data/body_preprocessed \
+    --target_spacing 3.0 0.5 0.5 \
+    --target_shape 24 512 512
+
+# Setup MAISI
 python setup_maisi.py \
-    --data_path /data/body_scans \
+    --data_path /data/body_preprocessed \
     --maisi_version maisi3d-ddpm \
     --body_region chest_abdomen \
     --epochs 200 \
-    --num_gpus 4
+    --num_gpus 1
 ```
 
 ## Best Practices
 
-1. **Start Small**: Test with a small dataset and few epochs first
-2. **Monitor Training**: Check GPU utilization and training progress
-3. **Version Control**: Keep track of configurations and model versions
-4. **Backup Models**: Save important model checkpoints
-5. **Document Settings**: Record successful configurations for reproduction
+1. **Always Preprocess First**: Ensure consistent data properties before training
+2. **Start Small**: Test with a small dataset and few epochs first
+3. **Use Single GPU**: Avoid distributed training issues with MAISI
+4. **Monitor Training**: Check loss progression and GPU utilization
+5. **Save Logs**: Use `tee` to save terminal output to log files
+6. **Version Control**: Keep track of configurations and model versions
+7. **Backup Models**: Save important model checkpoints
+8. **Document Settings**: Record successful configurations for reproduction
+9. **Check Data Quality**: Verify preprocessing results before training
+10. **Monitor Loss**: Expect loss to drop from ~1.0 to ~0.1 over 50+ epochs
 
 ## Support and Resources
 

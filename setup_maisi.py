@@ -453,13 +453,14 @@ def main():
     print(f"\n# After step 1 completes, create metadata files:")
     print(f"python {sys.argv[0]} --data_path {data_path} --work_dir {work_dir} --create_json_only --body_region {args.body_region}")
     
-    print(f"\n# Step 2: Train the model")
+    print(f"\n# Step 2: Train the model (with logging)")
     print(f"torchrun --nproc_per_node={num_gpus} --nnodes=1 \\")
     print(f"    -m scripts.diff_model_train \\")
     print(f"    --env_config {env_config_filepath} \\")
     print(f"    --model_config {model_config_filepath} \\")
     print(f"    --model_def {model_def_filepath} \\")
-    print(f"    --num_gpus {num_gpus}{no_amp_arg}")
+    print(f"    --num_gpus {num_gpus}{no_amp_arg} \\")
+    print(f"    2>&1 | tee {work_dir}/training.log")
     
     print(f"\n# Step 3: Run inference (generate {args.num_images} images)")
     print(f"torchrun --nproc_per_node={num_gpus} --nnodes=1 \\")
@@ -467,18 +468,23 @@ def main():
     print(f"    --env_config {env_config_filepath} \\")
     print(f"    --model_config {model_config_filepath} \\")
     print(f"    --model_def {model_def_filepath} \\")
-    print(f"    --num_gpus {num_gpus}{no_amp_arg}")
+    print(f"    --num_gpus {num_gpus}{no_amp_arg} \\")
+    print(f"    2>&1 | tee {work_dir}/inference.log")
     
     print("\n" + "="*80)
     print("IMPORTANT NOTES:")
     print("="*80)
     print(f"• Run each command in sequence")
     print(f"• Wait for each step to complete before running the next")
+    print(f"• Training logs will be saved to: {work_dir}/training.log")
+    print(f"• Inference logs will be saved to: {work_dir}/inference.log")
+    print(f"• Monitor progress: tail -f {work_dir}/training.log")
     print(f"• After Step 1, JSON metadata files will be created automatically")
     print(f"• Results will be saved in: {env_config_out['output_dir']}")
     print(f"• Model checkpoints will be in: {env_config_out['model_dir']}")
     if num_gpus > 1:
         print(f"• Using {num_gpus} GPUs for distributed training")
+        print(f"• NOTE: Multi-GPU training may fail - use single GPU if issues occur")
     print("="*80)
     
     # Note about JSON files creation

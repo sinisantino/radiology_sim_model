@@ -74,11 +74,77 @@ python setup_maisi.py \
 
 ## Complete Workflow
 
+### Phase 0: Data Preprocessing (CRITICAL)
+
+**⚠️ IMPORTANT**: Medical images must have consistent spacing and dimensions for successful training. If your images have different shapes or voxel spacing, you MUST preprocess them first.
+
+#### Check Your Data Consistency
+
+First, verify if your data needs preprocessing:
+
+```bash
+# Check consistency of your medical images
+python -c "
+import nibabel as nib
+import glob
+files = glob.glob('./your_data_path/*.nii.gz')
+for f in files[:5]:
+    img = nib.load(f)
+    print(f'{f}: shape={img.shape}, spacing={img.header.get_zooms()[:3]}')
+"
+```
+
+#### When Preprocessing is Required
+
+Preprocess if you see:
+- **Different image dimensions** (e.g., some 512x512, others 320x320)
+- **Varying voxel spacing** (e.g., spacing from 0.35mm to 0.625mm)
+- **Different slice counts** (e.g., some 23 slices, others 26 slices)
+
+#### Run Data Preprocessing
+
+```bash
+# Install required packages
+pip install scipy
+
+# Preprocess your data to consistent spacing and dimensions
+python preprocess_data.py \
+    --input_dir ./your_original_data \
+    --output_dir ./preprocessed_data \
+    --target_spacing 3.0 0.5 0.5 \
+    --target_shape 24 512 512
+```
+
+**Preprocessing Parameters:**
+- `--target_spacing`: Voxel spacing in mm (z, y, x) - adjust for your anatomy
+- `--target_shape`: Image dimensions (z, y, x) - ensure adequate resolution
+
+**Recommended Settings by Anatomy:**
+- **Prostate**: `--target_spacing 3.0 0.5 0.5 --target_shape 24 512 512`
+- **Brain**: `--target_spacing 1.0 1.0 1.0 --target_shape 128 256 256`
+- **Chest**: `--target_spacing 2.0 0.7 0.7 --target_shape 64 512 512`
+
+#### Verify Preprocessing Results
+
+```bash
+# Confirm all images now have consistent properties
+python -c "
+import nibabel as nib
+import glob
+files = glob.glob('./preprocessed_data/*.nii.gz')
+for f in files[:5]:
+    img = nib.load(f)
+    print(f'{f}: shape={img.shape}, spacing={img.header.get_zooms()[:3]}')
+"
+```
+
+All images should now have **identical** shapes and spacing.
+
 ### Phase 1: Data Preparation
 
-1. **Run the setup script:**
+1. **Run the setup script with preprocessed data:**
    ```bash
-   python setup_maisi.py --data_path /path/to/medical/images --num_gpus 4 --epochs 100
+   python setup_maisi.py --data_path ./preprocessed_data --num_gpus 4 --epochs 100
    ```
 
 2. **What this does:**
@@ -119,13 +185,14 @@ python setup_maisi.py --data_path /path/to/medical/images --work_dir ./maisi_wor
 - Use the same `--body_region` value you used in the initial setup (if using maisi3d-ddpm)
 
 #### Step 3: Train the Model
+**Do not train parallelly. Use only 1 GPU due to known Maisi error**
 ```bash
-torchrun --nproc_per_node=4 --nnodes=1 \
+torchrun --nproc_per_node=1 --nnodes=1 \
     -m scripts.diff_model_train \
     --env_config ./maisi_work_dir/environment_maisi_diff_model.json \
     --model_config ./maisi_work_dir/config_maisi_diff_model.json \
     --model_def ./maisi_work_dir/config_maisi.json \
-    --num_gpus 4
+    --num_gpus 1
 ```
 
 #### Step 4: Run Inference
@@ -177,14 +244,22 @@ maisi_work_dir/
 ## Tips and Best Practices
 
 ### For Production Use
+- **ALWAYS preprocess data first** to ensure consistency
 - Use 100+ epochs for real medical data
 - Consider multiple GPUs for faster training
 - Monitor GPU memory usage and adjust `num_splits` if needed
 
 ### For Development/Testing
+- **Check data consistency before training**
 - Start with 50 epochs and smaller datasets
 - Use `maisi3d-rflow` for faster iteration
 - Test with single GPU first
+
+### Data Quality Requirements
+- **Consistent voxel spacing** across all images
+- **Identical image dimensions** for all cases
+- **Appropriate resolution** for target anatomy
+- **Normalized intensity ranges** (handled by preprocessing)
 
 ### Memory Management
 - Use `--no_amp` for H100 GPUs if encountering issues
@@ -192,16 +267,80 @@ maisi_work_dir/
 - Monitor disk space during training data creation
 
 ### Troubleshooting
+
+#### Common Issues
+
+**1. AttributeError: 'DistributedDataParallel' object has no attribute 'include_top_region_index_input'**
+
+This error occurs with multi-GPU training. **Solution**: Use single GPU for training:
+
+```bash
+# Instead of --nproc_per_node=2, use --nproc_per_node=1
+torchrun --nproc_per_node=1 --nnodes=1 \
+    -m scripts.diff_model_train \
+    --env_config ./maisi_work_dir/environment_maisi_diff_model.json \
+    --model_config ./maisi_work_dir/config_maisi_diff_model.json \
+    --model_def ./maisi_work_dir/config_maisi.json \
+    --num_gpus 1
+```
+
+**2. Missing embedding files**
+- Ensure Step 1 (create training data) completed successfully
+- Check that `embeddings/` directory contains `.nii.gz` files
+
+**3. Missing JSON metadata files**
+- Run Step 2 (create JSON metadata) after Step 1 completes
+- Verify `.json` files exist alongside `.nii.gz` files in `embeddings/`
+
+**4. Memory Issues**
 - Ensure all .nii.gz files are valid medical images
 - Check that CUDA drivers are compatible
 - Verify sufficient disk space in working directory
+- Use `--no_amp` for H100 GPUs if encountering issues
+- Increase `--num_splits` to reduce GPU memory usage
+- Monitor disk space during training data creation
+
+**5. Poor Training Performance (High Loss)**
+
+If your loss remains high (>0.5) after 25+ epochs:
+
+```bash
+# Check data consistency - this is the most common cause
+python -c "
+import nibabel as nib
+import glob
+files = glob.glob('./your_data/*.nii.gz')
+shapes = set()
+spacings = set()
+for f in files:
+    img = nib.load(f)
+    shapes.add(img.shape)
+    spacings.add(tuple(round(x, 3) for x in img.header.get_zooms()[:3]))
+print(f'Unique shapes: {shapes}')
+print(f'Unique spacings: {spacings}')
+if len(shapes) > 1 or len(spacings) > 1:
+    print('❌ INCONSISTENT DATA - Preprocessing required!')
+else:
+    print('✅ Data is consistent')
+"
+```
+
+**Solution**: If data is inconsistent, use `preprocess_data.py` to standardize before training.
 
 ## Example Use Cases
 
 ### Research Setup (Small Dataset)
 ```bash
+# First preprocess data
+python preprocess_data.py \
+    --input_dir ./research_data \
+    --output_dir ./research_data_preprocessed \
+    --target_spacing 2.0 0.7 0.7 \
+    --target_shape 32 256 256
+
+# Then run MAISI setup
 python setup_maisi.py \
-    --data_path ./research_data \
+    --data_path ./research_data_preprocessed \
     --maisi_version maisi3d-rflow \
     --epochs 50 \
     --num_gpus 1
@@ -209,8 +348,16 @@ python setup_maisi.py \
 
 ### Production Setup (Large Dataset)
 ```bash
+# First preprocess data
+python preprocess_data.py \
+    --input_dir /data/medical_images \
+    --output_dir /data/medical_images_preprocessed \
+    --target_spacing 1.5 0.5 0.5 \
+    --target_shape 48 512 512
+
+# Then run MAISI setup
 python setup_maisi.py \
-    --data_path /data/medical_images \
+    --data_path /data/medical_images_preprocessed \
     --maisi_version maisi3d-rflow \
     --epochs 200 \
     --num_gpus 8 \
@@ -219,8 +366,16 @@ python setup_maisi.py \
 
 ### Specific Anatomy (Head/Neck)
 ```bash
+# Preprocess with brain-appropriate settings
+python preprocess_data.py \
+    --input_dir ./head_neck_data \
+    --output_dir ./head_neck_preprocessed \
+    --target_spacing 1.0 1.0 1.0 \
+    --target_shape 128 256 256
+
+# Then run MAISI setup
 python setup_maisi.py \
-    --data_path ./head_neck_data \
+    --data_path ./head_neck_preprocessed \
     --maisi_version maisi3d-ddpm \
     --body_region head_neck \
     --epochs 100 \
