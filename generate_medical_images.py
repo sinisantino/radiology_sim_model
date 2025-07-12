@@ -172,6 +172,10 @@ Examples:
                        help='MAISI version (default: maisi3d-rflow - faster)')
     parser.add_argument('--list-options', action='store_true',
                        help='List all available anatomies and body regions, then exit')
+    parser.add_argument('--seed', type=int, default=None,
+                       help='Random seed for reproducible results (default: uses microsecond-based random seed)')
+    parser.add_argument('--deterministic', action='store_true',
+                       help='Use fixed seed (0) for fully reproducible results')
     
     args = parser.parse_args()
     
@@ -337,8 +341,21 @@ Examples:
     )
     
     # Set deterministic seed
-    set_determinism(seed=0)
-    args_ns.random_seed = 0
+    if args.deterministic:
+        seed = 0
+        print("Using deterministic mode (seed=0) for reproducible results")
+    elif args.seed is not None:
+        seed = args.seed
+        print(f"Using custom seed: {seed}")
+    else:
+        import random
+        import time
+        # Use microseconds + random for better uniqueness
+        seed = int((time.time() * 1000000) % 1000000) + random.randint(0, 9999)
+        print(f"Using random seed: {seed}")
+    
+    set_determinism(seed=seed)
+    args_ns.random_seed = seed
     
     # Initialize networks and load weights
     logger.info("Loading model weights...")
