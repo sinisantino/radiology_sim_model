@@ -128,10 +128,10 @@ def print_available_options():
     print("python generate_medical_images.py --anatomy prostate")
     print("\n# Generate liver image with custom settings:")
     print("python generate_medical_images.py --anatomy liver --body_region abdomen --num_samples 2")
-    print("\n# Generate brain image with validation:")
-    print("python generate_medical_images.py --anatomy brain --body_region head --verbose")
-    print("\n# High quality generation with retry for failed images:")
-    print("python generate_medical_images.py --anatomy liver --num_inference_steps 100 --retry_failed")
+    print("\n# Generate brain image:")
+    print("python generate_medical_images.py --anatomy brain --body_region head")
+    print("\n# High quality generation (more inference steps):")
+    print("python generate_medical_images.py --anatomy liver --num_inference_steps 100")
     print("="*60)
 
 def check_and_install_packages():
@@ -145,53 +145,7 @@ def check_and_install_packages():
         print("Installing required packages...")
         os.system("pip install -q 'monai-weekly[nibabel, tqdm]' matplotlib")
         
-def validate_generated_image(image_path, verbose=False):
-    """
-    Validate that a generated image is not black/empty.
-    Returns True if image is valid, False if it appears to be black/empty.
-    """
-    try:
-        import nibabel as nib
-        import numpy as np
-        
-        # Load the NIfTI image
-        img = nib.load(image_path)
-        data = img.get_fdata()
-        
-        # Basic statistics
-        mean_val = np.mean(data)
-        std_val = np.std(data)
-        min_val = np.min(data)
-        max_val = np.max(data)
-        non_zero_count = np.count_nonzero(data)
-        total_voxels = data.size
-        non_zero_ratio = non_zero_count / total_voxels
-        
-        if verbose:
-            print(f"  Image validation for {image_path}:")
-            print(f"    Mean: {mean_val:.4f}, Std: {std_val:.4f}")
-            print(f"    Range: [{min_val:.4f}, {max_val:.4f}]")
-            print(f"    Non-zero voxels: {non_zero_count}/{total_voxels} ({non_zero_ratio:.2%})")
-        
-        # Consider image invalid if:
-        # 1. All values are zero or very close to zero
-        # 2. Very low standard deviation (uniform/flat image)
-        # 3. Very few non-zero voxels
-        is_valid = (
-            abs(mean_val) > 1e-6 or  # Mean is not essentially zero
-            std_val > 1e-6 or        # Has some variation
-            non_zero_ratio > 0.01    # At least 1% non-zero voxels
-        )
-        
-        if verbose:
-            print(f"    Status: {'VALID' if is_valid else 'INVALID (appears black/empty)'}")
-        
-        return is_valid
-        
-    except Exception as e:
-        if verbose:
-            print(f"  Error validating {image_path}: {e}")
-        return False  # Assume invalid if we can't read it
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -201,8 +155,8 @@ def main():
 Examples:
   %(prog)s --anatomy prostate
   %(prog)s --anatomy liver --body_region abdomen --num_samples 2
-  %(prog)s --anatomy brain --body_region head --verbose
-  %(prog)s --anatomy liver --num_inference_steps 100 --retry_failed
+  %(prog)s --anatomy brain --body_region head
+  %(prog)s --anatomy liver --num_inference_steps 100  # High quality
   %(prog)s --list-options  # Show all available options
         """)
     
@@ -227,12 +181,8 @@ Examples:
                        help='Random seed for reproducible results (default: random each time)')
     parser.add_argument('--deterministic', action='store_true',
                        help='Use fixed seed (0) for reproducible results')
-    parser.add_argument('--verbose', action='store_true',
-                       help='Enable verbose output and image validation')
-    parser.add_argument('--retry_failed', action='store_true',
-                       help='Automatically retry generation if black/empty images are detected')
-    parser.add_argument('--num_inference_steps', type=int, default=50,
-                       help='Number of inference steps for diffusion (default: 50, higher=better quality but slower)')
+    parser.add_argument('--num_inference_steps', type=int, default=30,
+                       help='Number of inference steps for diffusion (default: 30, higher=better quality but slower)')
     
     args = parser.parse_args()
     
@@ -407,8 +357,7 @@ Examples:
     else:
         import random
         import time
-        # Use microseconds + random for better uniqueness
-        seed = int((time.time() * 1000000) % 1000000) + random.randint(0, 9999)
+        seed = int(time.time()) % 10000  # Use current time as seed
         print(f"Using random seed: {seed}")
     
     set_determinism(seed=seed)
@@ -484,90 +433,28 @@ Examples:
         autoencoder_sliding_window_infer_overlap=args_ns.autoencoder_sliding_window_infer_overlap,
     )
     
-    # Generate images with validation and retry logic
+    # Generate images
     logger.info(f"Generating {args.num_samples} synthetic {args.anatomy} image(s)...")
     logger.info(f"Output will be saved to: {args_ns.output_dir}")
-    
-    # Increase inference steps for better quality if we have black image issues
-    if args_ns.num_inference_steps < 50:
-        logger.info("Using enhanced inference steps (50) to improve generation quality...")
-        args_ns.num_inference_steps = 50
-        # Update the sampler with new inference steps
-        ldm_sampler.num_inference_steps = 50
-    
-    max_retries = 3 if args.retry_failed else 1
-    all_output_filenames = []
-    
-    for attempt in range(max_retries):
-        if attempt > 0:
-            logger.info(f"Retry attempt {attempt + 1}/{max_retries} for failed generations...")
-            # Use different seed for retry
-            import random
-            retry_seed = seed + attempt * 1000 + random.randint(0, 999)
-            set_determinism(seed=retry_seed)
-            args_ns.random_seed = retry_seed
-            print(f"Using retry seed: {retry_seed}")
-        
-        output_filenames = ldm_sampler.sample_multiple_images(args_ns.num_output_samples)
-        
-        # Validate generated images
-        valid_outputs = []
-        invalid_outputs = []
-        
-        for i, (img_file, mask_file) in enumerate(output_filenames):
-            is_valid = validate_generated_image(img_file, verbose=args.verbose)
-            if is_valid:
-                valid_outputs.append((img_file, mask_file))
-            else:
-                invalid_outputs.append((img_file, mask_file))
-                logger.warning(f"Generated image {i+1} appears to be black/empty: {img_file}")
-        
-        all_output_filenames.extend(valid_outputs)
-        
-        if len(invalid_outputs) == 0 or not args.retry_failed:
-            break
-        else:
-            logger.info(f"Found {len(invalid_outputs)} invalid images, retrying...")
-            args_ns.num_output_samples = len(invalid_outputs)  # Only regenerate failed ones
-    
+    output_filenames = ldm_sampler.sample_multiple_images(args_ns.num_output_samples)
     logger.info("Image generation completed!")
-    
-    # Final validation summary
-    if args.verbose or len(all_output_filenames) < args.num_samples:
-        print(f"\nValidation Summary:")
-        print(f"  Requested: {args.num_samples} images")
-        print(f"  Successfully generated: {len(all_output_filenames)} valid images")
-        if len(all_output_filenames) < args.num_samples:
-            print(f"  Failed/Invalid: {args.num_samples - len(all_output_filenames)} images")
-            print(f"  Tip: Try using --retry_failed flag or increase --num_inference_steps")
     
     print("\n" + "=" * 60)
     print("GENERATION COMPLETE!")
     print("=" * 60)
-    print(f"Successfully generated {len(all_output_filenames)} {args.anatomy} image/mask pair(s)")
+    print(f"Successfully generated {len(output_filenames)} {args.anatomy} image/mask pair(s)")
     print(f"Anatomy: {args.anatomy}")
     print(f"Body Region: {args.body_region}")
     print(f"Output Size: {args.output_size} voxels")
     print(f"Voxel Spacing: {args.spacing} mm")
     print()
     print("Generated files:")
-    for i, (img_file, mask_file) in enumerate(all_output_filenames):
+    for i, (img_file, mask_file) in enumerate(output_filenames):
         print(f"  Sample {i+1}:")
         print(f"    Image: {img_file}")
         print(f"    Mask:  {mask_file}")
     print(f"\nAll files saved in: {args_ns.output_dir}")
     print(f"Use medical imaging software (e.g., 3D Slicer, ITK-SNAP) to view .nii.gz files")
-    
-    if len(all_output_filenames) < args.num_samples:
-        print("\n" + "!" * 60)
-        print("WARNING: Some images failed to generate properly!")
-        print("Suggestions to improve generation:")
-        print("1. Use --retry_failed flag for automatic retries")
-        print("2. Increase inference steps: --num_inference_steps 100")
-        print("3. Try different anatomy or body region")
-        print("4. Check GPU memory availability")
-        print("!" * 60)
-    
     print("=" * 60)
 
 if __name__ == "__main__":
