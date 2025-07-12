@@ -228,6 +228,7 @@ Examples:
     print(f"Anatomy: {args.anatomy}")
     print(f"Body Region: {args.body_region}")
     print(f"Number of Samples: {args.num_samples}")
+    print(f"Inference Steps: {args.num_inference_steps}")
     print(f"Output Size: {args.output_size}")
     print(f"Voxel Spacing: {args.spacing}")
     print(f"MAISI Version: {args.maisi_version}")
@@ -357,7 +358,8 @@ Examples:
     else:
         import random
         import time
-        seed = int(time.time()) % 10000  # Use current time as seed
+        # Use microseconds + process ID + random for better uniqueness
+        seed = int((time.time() * 1000000) + os.getpid() + random.randint(0, 10000)) % 100000
         print(f"Using random seed: {seed}")
     
     set_determinism(seed=seed)
